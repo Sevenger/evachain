@@ -1,6 +1,6 @@
 # evachain
 
-用 Golang 实现的 blockchain
+用 Golang 实现的 blockchain。
 
 ## 资料
 
