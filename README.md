@@ -1,5 +1,7 @@
 # evachain
 
+用 Golang 实现的 blockchain
+
 ## 资料
 
 - [github: awesome-blockchain-cn](https://github.com/chaozh/awesome-blockchain-cn)
