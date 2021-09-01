@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -76,13 +75,13 @@ func IsValidBlock(newBlock, lastBlock *Block) bool {
 
 func IsValidChain(chain Chain) bool {
 	if chain[0] != GenesisBlock {
-		log.Println("不是同一条链", chain[0])
+		logMsg("is not same chain")
 		return false
 	}
 
 	for i := 0; i < len(chain)-1; i++ {
 		if !IsValidBlock(chain[i], chain[i+1]) {
-			log.Println("含有非法区块", chain[i])
+			logMsg("contains invalid block:", chain[i])
 			return false
 		}
 	}
@@ -93,21 +92,17 @@ func GetLatestBlock() *Block {
 	return blockchain[len(blockchain)-1]
 }
 
-func GetLatestBlockSlice() Chain {
-	return Chain{GetLatestBlock()}
-}
-
 func AddBlock(block *Block) {
 	if IsValidBlock(block, GetLatestBlock()) {
 		blockchain = append(blockchain, block)
 	} else {
-		logMsg("wrong block", block)
+		logMsg("invalid block:", block)
 	}
 }
 
 func ReplaceChain(chain Chain) {
 	if IsValidChain(chain) && len(chain) > len(blockchain) {
-		log.Println("替换当前的链")
+		logMsg("replace the chain")
 		blockchain = chain
 		BoardCast(ResponseLatestMsg())
 	}

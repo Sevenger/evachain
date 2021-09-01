@@ -12,7 +12,7 @@ import (
 var sockets []*websocket.Conn
 
 //handleBlocks 查看链数据
-func handleBlocks(w http.ResponseWriter, r *http.Request) {
+func handleBlocks(w http.ResponseWriter, _ *http.Request) {
 	bs, _ := json.Marshal(blockchain)
 	w.Write(bs)
 }
@@ -25,7 +25,8 @@ func handleAddBlock(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	defer r.Body.Close()
 	if err := decoder.Decode(&params); err != nil {
-		logErr("decoder error", err)
+		logMsg("invalid block data:", err)
+		return
 	}
 
 	block := GenerateNextBlock(params.Data)
@@ -35,36 +36,37 @@ func handleAddBlock(w http.ResponseWriter, r *http.Request) {
 }
 
 //handlePeers 查看p2p节点信息
-func handlePeers(w http.ResponseWriter, r *http.Request) {
+func handlePeers(w http.ResponseWriter, _ *http.Request) {
 	var peers []string
 	for _, socket := range sockets {
 		peers = append(peers, socket.RemoteAddr().String())
 	}
 
-	peersJson, _ := json.Marshal(peers)
-	w.Write(peersJson)
+	bs, _ := json.Marshal(peers)
+	w.Write(bs)
 }
 
 //handleAddPeer 添加p2p节点
-func handleAddPeer(w http.ResponseWriter, r *http.Request) {
+func handleAddPeer(_ http.ResponseWriter, r *http.Request) {
 	var params struct {
 		Peer string `json:"peer"`
 	}
+	logMsg("jia jiedian")
 	decoder := json.NewDecoder(r.Body)
 	defer r.Body.Close()
 
 	if err := decoder.Decode(&params); err != nil {
-		log.Println("invalid peer", err)
+		logMsg("invalid peer data:", err)
 		return
 	}
 
-	connectToPeers([]string{params.Peer})
+	connectToPeer(params.Peer)
 }
 
 //handleP2P websocket
 func handleP2P(ws *websocket.Conn) {
 	var (
-		v    = &ResponseBlockchain{}
+		res  = &Response{}
 		peer = ws.LocalAddr().String()
 	)
 	sockets = append(sockets, ws)
@@ -73,46 +75,49 @@ func handleP2P(ws *websocket.Conn) {
 		var msg []byte
 		err := websocket.Message.Receive(ws, &msg)
 		if err == io.EOF {
-			log.Println("p2p节点关闭", peer)
+			logMsgf("peer[%s] closed", peer)
 			break
 		}
 		if err != nil {
-			log.Println("无法接收p2p信息", peer, err.Error())
+			logMsgf("can't receive msg from peer[%s]:", peer, err.Error())
 			break
 		}
 
-		log.Printf("接收信息[来自 %s]: %s.\n", peer, msg)
-		if err = json.Unmarshal(msg, v); err != nil {
-			log.Println("非法p2p信息")
+		logMsgf("received[from %s]: %s.\n", peer, msg)
+		if err = json.Unmarshal(msg, res); err != nil {
+			log.Println("invalid msg")
 			continue
 		}
 
-		switch v.Type {
-		case queryLatest:
-			v.Type = responseBlockchain
+		switch res.Type {
+		case queryLastBlock:
+			res.Type = responseBlockchain
 			bs := ResponseLatestMsg()
-			log.Printf("responseLatestMsg: %s\n", bs)
+
+			logMsg("responseLatestMsg:", bs)
 			ws.Write(bs)
 
-		case queryAll:
-			v.Type = responseBlockchain
+		case queryAllBlock:
+			res.Type = responseBlockchain
 			d, _ := json.Marshal(blockchain)
-			v.Data = string(d)
-			bs, _ := json.Marshal(v)
-			log.Printf("responseChainMsg: %s", bs)
+			res.Data = string(d)
+			bs, _ := json.Marshal(res)
+
+			logMsg("responseChainMsg:", bs)
 			ws.Write(bs)
 
 		case responseBlockchain:
-			handleBlockchainResponse(msg)
+			handleBlockchainResponse([]byte(res.Data))
 		}
 	}
 }
 
+//handleBlockchainResponse 处理response
 func handleBlockchainResponse(msg []byte) {
 	var receivedBlocks = []*Block{}
 
 	if err := json.Unmarshal(msg, &receivedBlocks); err != nil {
-		log.Println("非法区块链", err)
+		log.Println("invalid chain:", err)
 		return
 	}
 
@@ -125,7 +130,7 @@ func handleBlockchainResponse(msg []byte) {
 			blockchain = append(blockchain, receivedBlock)
 			// 接收的区块长度为1时查询其他节点
 		} else if len(receivedBlocks) == 1 {
-			BoardCast([]byte(fmt.Sprintf("{\"type\": %d}", queryAll)))
+			BoardCast([]byte(fmt.Sprintf("{\"type\": %d}", queryAllBlock)))
 		} else {
 			// 检查是否需要替换链
 			ReplaceChain(receivedBlocks)
@@ -135,19 +140,17 @@ func handleBlockchainResponse(msg []byte) {
 	}
 }
 
-func connectToPeers(peers []string) {
-	for _, peer := range peers {
-		if peer == "" {
-			continue
-		}
-		ws, err := websocket.Dial(peer, "", peer)
-		if err != nil {
-			log.Println("dial to peer", err)
-			continue
-		}
-
-		go handleP2P(ws)
+//connectToPeer 链接p2p节点
+func connectToPeer(peer string) {
+	ws, err := websocket.Dial(peer, "", peer)
+	if err != nil {
+		logMsg("invalid peer:", err)
+		return
 	}
+
+	go handleP2P(ws)
+
+	//log.Println("query latest block.")
 }
 
 //BoardCast 向所有P2P节点发送信息
@@ -155,28 +158,29 @@ func BoardCast(msg []byte) {
 	for i, socket := range sockets {
 		if _, err := socket.Write(msg); err != nil {
 			logMsgf("peer[%s] disconnect", socket.RemoteAddr().String())
+			// 去除节点
 			sockets = append(sockets[:i], sockets[i+1:]...)
 		}
 	}
 }
 
 const (
-	queryAll = iota
-	queryLatest
+	queryAllBlock = iota
+	queryLastBlock
 	responseBlockchain
 )
 
-type ResponseBlockchain struct {
+type Response struct {
 	Type int    `json:"type,omitempty"`
 	Data string `json:"data,omitempty"`
 }
 
 func ResponseLatestMsg() []byte {
-	blockJson, _ := json.Marshal(GetLatestBlock())
-	response := &ResponseBlockchain{
+	d, _ := json.Marshal(GetLatestBlock())
+	response := &Response{
 		Type: responseBlockchain,
-		Data: string(blockJson),
+		Data: string(d),
 	}
-	responseJson, _ := json.Marshal(response)
-	return responseJson
+	bs, _ := json.Marshal(response)
+	return bs
 }
