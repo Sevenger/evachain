@@ -38,6 +38,14 @@ func NewBlock(index, timeStamp int64, previousHash, hash, data string) *Block {
 	}
 }
 
+func GenerateBlock(lastBlock *Block, data string) *Block {
+	newBlock := NewBlock(lastBlock.Index+1, time.Now().Unix(), lastBlock.PreviousHash, "", data)
+	for i := 0; ; i++ {
+
+	}
+	return newBlock
+}
+
 func GenerateNextBlock(data string) *Block {
 	previousHash := GetLatestBlock().Hash
 	index := GetLatestBlock().Index + 1
@@ -57,6 +65,11 @@ func CalculateHash(index int64, previousHash string, data string) string {
 
 func CalculateHashForBlock(block *Block) string {
 	return CalculateHash(block.Index, block.PreviousHash, block.Data)
+}
+
+func IsValidHash(hash string, difficulty int) bool {
+	prefix := strings.Repeat("0", difficulty)
+	return strings.HasPrefix(hash, prefix)
 }
 
 func IsValidBlock(newBlock, lastBlock *Block) bool {
