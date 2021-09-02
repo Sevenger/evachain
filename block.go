@@ -13,19 +13,19 @@ var GenesisBlock = &Block{
 	TimeStamp:    1630480460,
 	PreviousHash: "",
 	Hash:         "280074b880e45acfced3772b80d83a08fd90e0affd69e15dcc583c66e40863d4",
-	Data:         "Hello, blockchain!",
+	Data:         "Hello, EvaChain!",
 }
 
-var blockchain = Chain{GenesisBlock}
+var EvaChain = Chain{GenesisBlock}
 
-type Chain = []*Block
+type Chain []*Block
 
 type Block struct {
-	Index        int64  `json:"index,omitempty"`
-	TimeStamp    int64  `json:"time_stamp,omitempty"`
-	PreviousHash string `json:"previous_hash,omitempty"`
-	Hash         string `json:"hash,omitempty"`
-	Data         string `json:"data,omitempty"`
+	Index        int64  `json:"index"`
+	TimeStamp    int64  `json:"time_stamp"`
+	PreviousHash string `json:"previous_hash"`
+	Hash         string `json:"hash"`
+	Data         string `json:"data"`
 }
 
 func NewBlock(index, timeStamp int64, previousHash, hash, data string) *Block {
@@ -74,13 +74,13 @@ func IsValidBlock(newBlock, lastBlock *Block) bool {
 }
 
 func IsValidChain(chain Chain) bool {
-	if chain[0] != GenesisBlock {
-		logMsg("is not same chain")
+	if *chain[0] != *GenesisBlock {
+		logMsg("is not the same chain")
 		return false
 	}
 
 	for i := 0; i < len(chain)-1; i++ {
-		if !IsValidBlock(chain[i], chain[i+1]) {
+		if !IsValidBlock(chain[i+1], chain[i]) {
 			logMsg("contains invalid block:", chain[i])
 			return false
 		}
@@ -89,21 +89,21 @@ func IsValidChain(chain Chain) bool {
 }
 
 func GetLatestBlock() *Block {
-	return blockchain[len(blockchain)-1]
+	return EvaChain[len(EvaChain)-1]
 }
 
 func AddBlock(block *Block) {
 	if IsValidBlock(block, GetLatestBlock()) {
-		blockchain = append(blockchain, block)
+		EvaChain = append(EvaChain, block)
 	} else {
 		logMsg("invalid block:", block)
 	}
 }
 
 func ReplaceChain(chain Chain) {
-	if IsValidChain(chain) && len(chain) > len(blockchain) {
+	if IsValidChain(chain) && len(chain) > len(EvaChain) {
 		logMsg("replace the chain")
-		blockchain = chain
+		EvaChain = chain
 		BoardCast(ResponseLatestMsg())
 	}
 }

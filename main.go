@@ -8,9 +8,8 @@ import (
 )
 
 var (
-	httpAddr = flag.String("api", ":3001", "api server address")
-	p2pAddr  = flag.String("p2p", ":6001", "p2p server address")
-	//initialPeers = flag.String("sockets", "ws://localhost:6001", "initial sockets")
+	httpAddr = flag.String("api", ":8080", "api server address")
+	p2pAddr  = flag.String("p2p", ":7070", "p2p server address")
 )
 
 func main() {
@@ -30,9 +29,9 @@ func main() {
 	logFatal("start P2P server error", http.ListenAndServe(*p2pAddr, nil))
 }
 
-func logFatal(msg interface{}, err error) {
+func logFatal(msg string, err error) {
 	if err != nil {
-		log.Fatalln(msg, err.Error())
+		log.Fatalln(msg, err)
 	}
 }
 
