@@ -2,23 +2,23 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"golang.org/x/net/websocket"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 )
 
 var sockets []*websocket.Conn
 
 //handleBlocks 查看链数据
 func handleBlocks(w http.ResponseWriter, _ *http.Request) {
-	bs, _ := json.Marshal(blockchain)
+	bs, _ := json.Marshal(EvaChain)
 	w.Write(bs)
 }
 
 //handleAddBlock 添加区块
-func handleAddBlock(w http.ResponseWriter, r *http.Request) {
+func handleAddBlock(_ http.ResponseWriter, r *http.Request) {
 	var params struct {
 		Data string `json:"data"`
 	}
@@ -29,6 +29,7 @@ func handleAddBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logMsgf("add block[data: %s]", params.Data)
 	block := GenerateNextBlock(params.Data)
 	AddBlock(block)
 	// 向其他p2p节点广播消息
@@ -39,7 +40,11 @@ func handleAddBlock(w http.ResponseWriter, r *http.Request) {
 func handlePeers(w http.ResponseWriter, _ *http.Request) {
 	var peers []string
 	for _, socket := range sockets {
-		peers = append(peers, socket.RemoteAddr().String())
+		if socket.IsClientConn() {
+			peers = append(peers, strings.Replace(socket.LocalAddr().String(), "ws://", "", 1))
+		} else {
+			peers = append(peers, socket.Request().RemoteAddr)
+		}
 	}
 
 	bs, _ := json.Marshal(peers)
@@ -51,7 +56,6 @@ func handleAddPeer(_ http.ResponseWriter, r *http.Request) {
 	var params struct {
 		Peer string `json:"peer"`
 	}
-	logMsg("jia jiedian")
 	decoder := json.NewDecoder(r.Body)
 	defer r.Body.Close()
 
@@ -60,84 +64,8 @@ func handleAddPeer(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logMsgf("add peer[%s]", params.Peer)
 	connectToPeer(params.Peer)
-}
-
-//handleP2P websocket
-func handleP2P(ws *websocket.Conn) {
-	var (
-		res  = &Response{}
-		peer = ws.LocalAddr().String()
-	)
-	sockets = append(sockets, ws)
-
-	for {
-		var msg []byte
-		err := websocket.Message.Receive(ws, &msg)
-		if err == io.EOF {
-			logMsgf("peer[%s] closed", peer)
-			break
-		}
-		if err != nil {
-			logMsgf("can't receive msg from peer[%s]:", peer, err.Error())
-			break
-		}
-
-		logMsgf("received[from %s]: %s.\n", peer, msg)
-		if err = json.Unmarshal(msg, res); err != nil {
-			log.Println("invalid msg")
-			continue
-		}
-
-		switch res.Type {
-		case queryLastBlock:
-			res.Type = responseBlockchain
-			bs := ResponseLatestMsg()
-
-			logMsg("responseLatestMsg:", bs)
-			ws.Write(bs)
-
-		case queryAllBlock:
-			res.Type = responseBlockchain
-			d, _ := json.Marshal(blockchain)
-			res.Data = string(d)
-			bs, _ := json.Marshal(res)
-
-			logMsg("responseChainMsg:", bs)
-			ws.Write(bs)
-
-		case responseBlockchain:
-			handleBlockchainResponse([]byte(res.Data))
-		}
-	}
-}
-
-//handleBlockchainResponse 处理response
-func handleBlockchainResponse(msg []byte) {
-	var receivedBlocks = []*Block{}
-
-	if err := json.Unmarshal(msg, &receivedBlocks); err != nil {
-		log.Println("invalid chain:", err)
-		return
-	}
-
-	receivedBlock := receivedBlocks[len(receivedBlocks)-1]
-	heldBlock := GetLatestBlock()
-	// 接收的区块的下标必须比当前的大
-	if receivedBlock.Index > heldBlock.Index {
-		// 接收的区块的previousHash必须是当前的hash
-		if heldBlock.Hash == receivedBlock.PreviousHash {
-			blockchain = append(blockchain, receivedBlock)
-			// 接收的区块长度为1时查询其他节点
-		} else if len(receivedBlocks) == 1 {
-			BoardCast([]byte(fmt.Sprintf("{\"type\": %d}", queryAllBlock)))
-		} else {
-			// 检查是否需要替换链
-			ReplaceChain(receivedBlocks)
-		}
-	} else {
-		log.Println("接收的区块链更短，不执行操作")
-	}
 }
 
 //connectToPeer 链接p2p节点
@@ -149,8 +77,83 @@ func connectToPeer(peer string) {
 	}
 
 	go handleP2P(ws)
+}
 
-	//log.Println("query latest block.")
+//handleP2P websocket
+func handleP2P(ws *websocket.Conn) {
+	var (
+		msg  = &Msg{}
+		peer = ws.LocalAddr().String()
+	)
+	sockets = append(sockets, ws)
+
+	// 新连接时查询该节点的链
+	log.Println("query latest block")
+	ws.Write(QueryLatestMsg())
+
+	for {
+		var receive []byte
+		err := websocket.Message.Receive(ws, &receive)
+		if err == io.EOF {
+			logMsgf("peer[%s] closed", peer)
+			break
+		}
+		if err != nil {
+			logMsgf("can't receive msg from peer[%s]:", peer, err.Error())
+			break
+		}
+
+		logMsgf("received[from %s]: %s.\n", peer, receive)
+		if err = json.Unmarshal(receive, msg); err != nil {
+			log.Println("invalid received msg")
+			continue
+		}
+
+		switch msg.Type {
+		case queryLastBlock:
+			bs := ResponseLatestMsg()
+
+			logMsgf("responseLatestMsg: %s\n", bs)
+			ws.Write(bs)
+
+		case queryAllBlock:
+			bs := ResponseAllMsg()
+
+			logMsgf("responseChainMsg: %s\n", bs)
+			ws.Write(bs)
+
+		case responseBlockchain:
+			handleBlockchainResponse([]byte(msg.Data))
+		}
+	}
+}
+
+//handleBlockchainResponse 处理response
+func handleBlockchainResponse(msg []byte) {
+	var receivedChain Chain
+	if err := json.Unmarshal(msg, &receivedChain); err != nil {
+		log.Println("invalid chain:", err)
+		return
+	}
+
+	receivedBlock := receivedChain[len(receivedChain)-1]
+	heldBlock := GetLatestBlock()
+	// 接收的区块的下标比当前的大时，决定是否同步链
+	if receivedBlock.Index > heldBlock.Index {
+		switch {
+		case receivedBlock.PreviousHash == heldBlock.Hash: // 接收的区块刚好是当前节点的下一个
+			logMsgf("add block[data: %s] from received", receivedBlock.Data)
+			EvaChain = append(EvaChain, receivedBlock)
+
+		case len(receivedChain) == 1: // 因为传进来的是最后一个节点，所以请求所有链
+			BoardCast(QueryAllMsg())
+
+		default: // 检查是否需要替换链
+			ReplaceChain(receivedChain)
+		}
+	} else {
+		log.Println("received chain not longer than current chain")
+	}
 }
 
 //BoardCast 向所有P2P节点发送信息
@@ -165,22 +168,44 @@ func BoardCast(msg []byte) {
 }
 
 const (
-	queryAllBlock = iota
-	queryLastBlock
+	queryLastBlock = iota
+	queryAllBlock
 	responseBlockchain
 )
 
-type Response struct {
-	Type int    `json:"type,omitempty"`
-	Data string `json:"data,omitempty"`
+type Msg struct {
+	Type int    `json:"type"`
+	Data string `json:"data"`
+}
+
+func QueryLatestMsg() []byte {
+	msg := &Msg{Type: queryLastBlock}
+	bs, _ := json.Marshal(msg)
+	return bs
+}
+
+func QueryAllMsg() []byte {
+	msg := &Msg{Type: queryAllBlock}
+	bs, _ := json.Marshal(msg)
+	return bs
 }
 
 func ResponseLatestMsg() []byte {
-	d, _ := json.Marshal(GetLatestBlock())
-	response := &Response{
+	d, _ := json.Marshal(EvaChain[len(EvaChain)-1:])
+	msg := &Msg{
 		Type: responseBlockchain,
 		Data: string(d),
 	}
-	bs, _ := json.Marshal(response)
+	bs, _ := json.Marshal(msg)
+	return bs
+}
+
+func ResponseAllMsg() []byte {
+	d, _ := json.Marshal(EvaChain)
+	msg := &Msg{
+		Type: responseBlockchain,
+		Data: string(d),
+	}
+	bs, _ := json.Marshal(msg)
 	return bs
 }
