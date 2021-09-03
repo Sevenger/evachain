@@ -11,6 +11,8 @@ import (
 
 var sockets []*websocket.Conn
 
+//var mineCh = make(chan string, 0)
+
 //handleBlocks 查看链数据
 func handleBlocks(w http.ResponseWriter, _ *http.Request) {
 	bs, _ := json.Marshal(EvaChain)
@@ -29,11 +31,9 @@ func handleAddBlock(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logMsgf("add block[data: %s]", params.Data)
-	block := GenerateNextBlock(params.Data)
-	AddBlock(block)
-	// 向其他p2p节点广播消息
-	BoardCast(ResponseLatestMsg())
+	go MineBlock(params.Data)
+	// 广播其他节点挖矿
+	BoardCast(MineBlockMsg(params.Data))
 }
 
 //handlePeers 查看p2p节点信息
@@ -122,6 +122,9 @@ func handleP2P(ws *websocket.Conn) {
 			logMsgf("responseChainMsg: %s\n", bs)
 			ws.Write(bs)
 
+		case mineBlock:
+			go MineBlock(msg.Data)
+
 		case responseBlockchain:
 			handleBlockchainResponse([]byte(msg.Data))
 		}
@@ -170,6 +173,7 @@ func BoardCast(msg []byte) {
 const (
 	queryLastBlock = iota
 	queryAllBlock
+	mineBlock
 	responseBlockchain
 )
 
@@ -210,7 +214,19 @@ func ResponseAllMsg() []byte {
 	return bs
 }
 
-func CalculateBlock() []byte {
+func MineBlockMsg(data string) []byte {
+	msg := &Msg{
+		Type: mineBlock,
+		Data: data,
+	}
+	bs, _ := json.Marshal(msg)
+	return bs
+}
 
-	return nil
+func MineBlock(data string) {
+	logMsgf("start mine block, data[%s]", data)
+	block := GenerateNextBlock(data)
+	AddBlock(block)
+	// 向其他p2p节点广播消息
+	BoardCast(ResponseLatestMsg())
 }

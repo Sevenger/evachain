@@ -11,6 +11,23 @@ import (
 
 const difficulty = 5
 
+type IBlock interface {
+	Pow()
+}
+
+func main() {
+	var b IBlock = B{}
+	b.Pow()
+}
+
+type B struct {
+	Index int64
+}
+
+func (B) Pow() {
+
+}
+
 var GenesisBlock = &Block{
 	Index:        0,
 	TimeStamp:    1630480460,
