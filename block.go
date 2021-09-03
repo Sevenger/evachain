@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const difficulty = 5
+
 var GenesisBlock = &Block{
 	Index:        0,
 	TimeStamp:    1630480460,
