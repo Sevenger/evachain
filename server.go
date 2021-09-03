@@ -209,3 +209,8 @@ func ResponseAllMsg() []byte {
 	bs, _ := json.Marshal(msg)
 	return bs
 }
+
+func CalculateBlock() []byte {
+
+	return nil
+}
