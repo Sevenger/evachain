@@ -15,17 +15,19 @@ var (
 func main() {
 	flag.Parse()
 
-	http.HandleFunc("/blocks", handleBlocks)
-	http.HandleFunc("/blocks/add", handleAddBlock)
-	http.HandleFunc("/peers", handlePeers)
-	http.HandleFunc("/peers/add", handleAddPeer)
+	var node INode = NewNode()
+
+	http.HandleFunc("/blocks", node.HandleGetBlocks)
+	http.HandleFunc("/blocks/add", node.HandleAddBlock)
+	http.HandleFunc("/peers", node.HandleGetPeers)
+	http.HandleFunc("/peers/add", node.HandleAddPeer)
 	go func() {
-		logMsg("Listen HTTP on", *httpAddr)
+		log.Println("Listen HTTP on", *httpAddr)
 		logFatal("start api sever error", http.ListenAndServe(*httpAddr, nil))
 	}()
 
-	http.Handle("/", websocket.Handler(handleP2P))
-	logMsg("Listen P2P on", *p2pAddr)
+	http.Handle("/", websocket.Handler(node.HandleBroadcast))
+	log.Println("Listen P2P on", *p2pAddr)
 	logFatal("start P2P server error", http.ListenAndServe(*p2pAddr, nil))
 }
 
@@ -33,12 +35,4 @@ func logFatal(msg string, err error) {
 	if err != nil {
 		log.Fatalln(msg, err)
 	}
-}
-
-func logMsg(msg ...interface{}) {
-	log.Println(msg...)
-}
-
-func logMsgf(f string, v ...interface{}) {
-	log.Printf(f, v...)
 }

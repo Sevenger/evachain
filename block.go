@@ -8,17 +8,73 @@ import (
 	"time"
 )
 
-var GenesisBlock = &Block{
-	Index:        0,
-	TimeStamp:    1630480460,
-	PreviousHash: "",
-	Hash:         "280074b880e45acfced3772b80d83a08fd90e0affd69e15dcc583c66e40863d4",
-	Data:         "Hello, EvaChain!",
+type IBlockChain interface {
+	GetGenesisBlock() *Block
+	IsValidaChain() bool
+	AddBlock(block *Block)
+	GetLatestBlock() *Block
+	GetBlockHigh() int
+	Get() *IBlock
 }
 
-var EvaChain = Chain{GenesisBlock}
+type BlockChain struct {
+	Blocks []*Block
+}
 
-type Chain []*Block
+func (bc BlockChain) GetGenesisBlock() *Block {
+	return &Block{
+		Index:        0,
+		TimeStamp:    1630480460,
+		PreviousHash: "",
+		Hash:         "280074b880e45acfced3772b80d83a08fd90e0affd69e15dcc583c66e40863d4",
+		Data:         "Hello, EvaChain!",
+	}
+}
+
+func (bc BlockChain) IsValidaChain() bool {
+	if bc.Blocks[0] != bc.GetGenesisBlock() {
+		logMsg("is not the same chain")
+		return false
+	}
+
+	for i := 0; i < len(bc.Blocks)-1; i++ {
+		if !IsValidBlock(bc.Blocks[i+1], bc.Blocks[i]) {
+			logMsg("contains invalid block:", bc.Blocks[i])
+			return false
+		}
+	}
+	return true
+}
+
+func (bc BlockChain) AddBlock(block *Block) {
+	panic("implement me")
+}
+
+func (bc BlockChain) GetLatestBlock() *Block {
+	return bc.Blocks[len(bc.Blocks)-1]
+}
+
+func (bc BlockChain) GetBlockHigh() int {
+	return len(bc.Blocks)
+}
+
+func (bc BlockChain) Get() *IBlock {
+	var b interface{} = bc.Blocks[0]
+	block := (b).(*IBlock)
+	return block
+}
+
+type IBlock interface {
+	Post()
+}
+
+type BlockImpl struct {
+	Index        int64  `json:"index"`
+	TimeStamp    int64  `json:"time_stamp"`
+	PreviousHash string `json:"previous_hash"`
+	Hash         string `json:"hash"`
+	Data         string `json:"data"`
+}
 
 type Block struct {
 	Index        int64  `json:"index"`
@@ -26,6 +82,10 @@ type Block struct {
 	PreviousHash string `json:"previous_hash"`
 	Hash         string `json:"hash"`
 	Data         string `json:"data"`
+}
+
+func (b Block) Post() {
+	panic("implement me")
 }
 
 func NewBlock(index, timeStamp int64, previousHash, hash, data string) *Block {
@@ -73,25 +133,6 @@ func IsValidBlock(newBlock, lastBlock *Block) bool {
 	return true
 }
 
-func IsValidChain(chain Chain) bool {
-	if *chain[0] != *GenesisBlock {
-		logMsg("is not the same chain")
-		return false
-	}
-
-	for i := 0; i < len(chain)-1; i++ {
-		if !IsValidBlock(chain[i+1], chain[i]) {
-			logMsg("contains invalid block:", chain[i])
-			return false
-		}
-	}
-	return true
-}
-
-func GetLatestBlock() *Block {
-	return EvaChain[len(EvaChain)-1]
-}
-
 func AddBlock(block *Block) {
 	if IsValidBlock(block, GetLatestBlock()) {
 		EvaChain = append(EvaChain, block)
@@ -100,8 +141,8 @@ func AddBlock(block *Block) {
 	}
 }
 
-func ReplaceChain(chain Chain) {
-	if IsValidChain(chain) && len(chain) > len(EvaChain) {
+func ReplaceChain(chain IBlockChain) {
+	if chain.IsValidaChain() && len(chain) > len(EvaChain) {
 		logMsg("replace the chain")
 		EvaChain = chain
 		BoardCast(ResponseLatestMsg())
