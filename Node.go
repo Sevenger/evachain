@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"golang.org/x/net/websocket"
-	"log"
 	"net/http"
 )
 
@@ -82,7 +81,7 @@ func (n *Node) HandleBroadcast(peer *websocket.Conn) {
 			continue
 		}
 
-		fmt.Println(msg)
+		fmt.Println("handle broadcast", msg)
 
 		switch msg.Type {
 		case MsgQueryLatestBlock:
@@ -92,23 +91,27 @@ func (n *Node) HandleBroadcast(peer *websocket.Conn) {
 			peer.Write(n.QueryAllBlockResponse())
 
 		case MsgResponse:
-			var receivedChain IBlockchain
-			if err := json.Unmarshal(metaData, &receivedChain); err != nil {
-				log.Println(err)
+			var receivedBlocks []BlockImpl
+			if err := json.Unmarshal([]byte(msg.Data), &receivedBlocks); err != nil {
 				continue
 			}
 
-			receivedBlock := receivedChain.GetLatestBlock()
-			heldBlock := n.blockchain.GetLatestBlock()
-			if receivedBlock.GetHigh() > heldBlock.GetHigh() {
+			receivedLatestBlock := receivedBlocks[len(receivedBlocks)-1]
+			heldLatestBlock := n.blockchain.GetLatestBlock()
+			if receivedLatestBlock.GetHigh() > heldLatestBlock.GetHigh() {
 				switch {
-				case receivedBlock.GetPreviousHash() == heldBlock.GetPreviousHash():
+				case receivedLatestBlock.GetPreHash() == heldLatestBlock.GetHash():
+					n.blockchain.AddBlock(receivedLatestBlock)
 
-				case receivedChain.GetBlockHigh() == 1:
+				case len(receivedBlocks) == 1:
 					n.Broadcast(n.QueryAllBlockMsg())
 
 				default:
-					n.blockchain = IBlockchain(receivedChain)
+					tmpBlocks := make([]IBlock, len(receivedBlocks))
+					for i, v := range receivedBlocks {
+						tmpBlocks[i] = IBlock(v)
+					}
+					n.blockchain.ReplaceBlocks(tmpBlocks)
 				}
 			}
 		}
@@ -135,6 +138,8 @@ const (
 	MsgQueryAllBlock = iota + 1
 	MsgQueryLatestBlock
 	MsgResponse
+	MsgQueryAllBlockResponse
+	MsgQueryLatestBlockResponse
 )
 
 type Message struct {
@@ -150,7 +155,7 @@ func (*Node) QueryAllBlockMsg() MetaData {
 }
 
 func (n *Node) QueryAllBlockResponse() MetaData {
-	d, _ := json.Marshal(n.blockchain)
+	d, _ := json.Marshal(n.blockchain.GetAllBlocks())
 	msg := &Message{
 		Type: MsgResponse,
 		Data: string(d),
@@ -164,9 +169,7 @@ func (n *Node) QueryLatestBlockMsg() MetaData {
 }
 
 func (n *Node) QueryLatestBlockResponse() MetaData {
-	blockchain := n.blockchain.(*BlockChain)
-	blockchain.Blocks = blockchain.Blocks[len(blockchain.Blocks)-1:]
-	d, _ := json.Marshal(blockchain)
+	d, _ := json.Marshal([]IBlock{n.blockchain.GetLatestBlock()})
 	msg := &Message{
 		Type: MsgResponse,
 		Data: string(d),
